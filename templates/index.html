@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instagram Reel Scraper and Downloader</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #0095f6;
+            text-align: center;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #0095f6;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #0077c5;
+        }
+        #results {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 4px;
+        }
+        .progress-bar {
+            width: 100%;
+            background-color: #f0f0f0;
+            padding: 3px;
+            border-radius: 3px;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, .2);
+            margin-top: 10px;
+        }
+        .progress-bar-fill {
+            display: block;
+            height: 22px;
+            background-color: #0095f6;
+            border-radius: 3px;
+            transition: width 500ms ease-in-out;
+        }
+    </style>
+</head>
+<body>
+    <h1>Instagram Reel Scraper and Downloader</h1>
+    <input type="text" id="accountUrl" placeholder="Instagramアカウントのリールページ URL を入力してください">
+    <button onclick="scrapeAndDownload()">実行</button>
+    <button onclick="stopProcess()">停止</button>
+    <div id="progress" style="display:none;">
+        <h3>進捗状況:</h3>
+        <div class="progress-bar">
+            <span class="progress-bar-fill" style="width: 0%;"></span>
+        </div>
+        <p id="progressText"></p>
+        <p id="currentReel"></p>
+        <p id="estimatedTime"></p>
+    </div>
+    <div id="results"></div>
+
+    <script>
+        let socket;
+
+        function connectWebSocket() {
+            socket = new WebSocket(`ws://${location.host}/ws`);
+            
+            socket.onopen = function(event) {
+                console.log("WebSocket接続が確立されました。");
+            };
+
+            socket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                updateUI(data);
+            };
+
+            socket.onclose = function(event) {
+                console.log("WebSocket接続が閉じられました。再接続を試みます...");
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            socket.onerror = function(error) {
+                console.error("WebSocketエラー:", error);
+            };
+        }
+
+        connectWebSocket();
+
+        function scrapeAndDownload() {
+            const accountUrl = document.getElementById('accountUrl').value;
+            const resultsDiv = document.getElementById('results');
+            const progressDiv = document.getElementById('progress');
+
+            if (!accountUrl) {
+                alert('Instagramアカウントの URL を入力してください');
+                return;
+            }
+
+            resultsDiv.innerHTML = 'スクレイピングとダウンロードを開始しています...';
+            progressDiv.style.display = 'block';
+
+            fetch('/scrape_and_download', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `account_url=${encodeURIComponent(accountUrl)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log(data.message);
+            })
+            .catch(error => {
+                resultsDiv.innerHTML = `エラー: ${error.message}`;
+            });
+        }
+
+        function stopProcess() {
+            fetch('/stop', {
+                method: 'POST',
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log(data.message);
+                document.getElementById('results').innerHTML += '<p>プロセスを停止しました。</p>';
+            })
+            .catch(error => {
+                console.error('停止処理中にエラーが発生しました:', error);
+            });
+        }
+
+        function updateUI(data) {
+            const progressBar = document.querySelector('.progress-bar-fill');
+            const progressText = document.getElementById('progressText');
+            const currentReelText = document.getElementById('currentReel');
+            const estimatedTimeText = document.getElementById('estimatedTime');
+            const resultsDiv = document.getElementById('results');
+
+            const percentComplete = data.total_reels > 0 ? (data.downloaded_reels / data.total_reels) * 100 : 0;
+            progressBar.style.width = `${percentComplete.toFixed(2)}%`;
+            progressText.textContent = `${data.downloaded_reels} / ${data.total_reels} リールをダウンロード (${percentComplete.toFixed(2)}%)`;
+            currentReelText.textContent = `現在処理中: ${data.current_reel}`;
+            estimatedTimeText.textContent = `推定残り時間: ${data.estimated_time}`;
+
+            if (data.status === 'completed' || data.status === 'stopped') {
+                resultsDiv.innerHTML = `
+                    <h2>スクレイピングとダウンロードが完了しました</h2>
+                    <p>合計リール数: ${data.total_reels}</p>
+                    <p>ダウンロードしたリール数: ${data.downloaded_reels}</p>
+                    <p>出力パス: downloaded_reels/</p>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>
